@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Aeron.Client" Version="1.4.0-standard" />
+    <PackageReference Include="Obvs" Version="4.1.0.9" />
+  </ItemGroup>
+
+</Project>
