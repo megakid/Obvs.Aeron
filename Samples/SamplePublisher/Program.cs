@@ -1,5 +1,6 @@
 ﻿using System;
 using System.IO;
+using System.Linq;
 using Adaptive.Aeron;
 using Adaptive.Agrona;
 using Adaptive.Agrona.Concurrent;
@@ -38,7 +39,7 @@ namespace SamplePublisher
             const int OneMb = OneKb * 1024;
 
             var testStreamId = 99;
-            var channel = "aeron:udp?endpoint=localhost:40123|interface=192.168.1.0/24";
+            var channel = "aeron:ipc";
             var maxMsgLength = OneMb;
 
             var context = new Adaptive.Aeron.Aeron.Context();
@@ -55,7 +56,7 @@ namespace SamplePublisher
             {
                 do
                 {
-                    TestMessage tm = new TestMessage() { EventId = 123, Bleb = Guid.NewGuid().ToString() };
+                    TestMessage tm = new TestMessage() { EventId = 123, Bleb = Enumerable.Repeat(Guid.NewGuid().ToString(), 100).Aggregate("", (x,y)=>x+y) };
                     //Console.WriteLine($"Streaming {NumberOfMessages} messages of {(RandomMessageLength ? " random" : "")} size {MessageLength} bytes to {Channel} on stream Id {StreamID}");
 
 
@@ -87,7 +88,7 @@ namespace SamplePublisher
             buffer.PutBytes(0, serTm);
 
             offerIdleStrategy.Reset();
-            while (publication.Offer(buffer, 0, length) < 0L)
+            while (!Offer(publication, buffer, length))
             {
                 // The offer failed, which is usually due to the publication
                 // being temporarily blocked.  Retry the offer after a short
@@ -97,6 +98,32 @@ namespace SamplePublisher
             }
 
             //reporter.OnMessage(1, length);
+        }
+
+        private static bool Offer(Publication publication, UnsafeBuffer buffer, int length)
+        {
+            var result = publication.Offer(buffer, 0, length);
+            if (result >= 0L)
+                return true;
+
+            switch (result)
+            {
+                case Publication.BACK_PRESSURED:
+                    Console.WriteLine(" Offer failed due to back pressure");
+                    return false;
+                case Publication.ADMIN_ACTION:
+                    Console.WriteLine("Offer failed because of an administration action in the system");
+                    return false;
+                case Publication.NOT_CONNECTED:
+                    Console.WriteLine(" Offer failed because publisher is not connected to subscriber");
+                    return true;
+                case Publication.CLOSED:
+                    Console.WriteLine("Offer failed publication is closed");
+                    return true;
+            }
+
+            Console.WriteLine(" Offer failed due to unknown reason");
+            return false;
         }
     }
 }
