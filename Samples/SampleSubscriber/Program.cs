@@ -1,41 +1,15 @@
 ﻿using System;
 using System.IO;
-using System.Text;
 using Adaptive.Aeron;
 using Adaptive.Aeron.LogBuffer;
 using Adaptive.Agrona;
 using Adaptive.Agrona.Concurrent;
-using ProtoBuf;
+using Sample.Shared;
 
-namespace SamplePublisher
+namespace Sample.Subscriber
 {
     public class Program
     {
-        [ProtoContract]
-        public class TestMessage
-        {
-            [ProtoMember(1)] public int EventId { get; set; }
-            [ProtoMember(2)] public string Bleb { get; set; }
-
-            public override string ToString() => $"{nameof(EventId)}: {EventId}, {nameof(Bleb)}: {Bleb}";
-        }
-
-        static byte[] Serialize<T>(T value)
-        {
-            using (var ms = new MemoryStream())
-            {
-                ProtoBuf.Serializer.Serialize(ms, value);
-                return ms.ToArray();
-            }
-        }
-
-        static T Deserialize<T>(byte[] data)
-        {
-            using (var ms = new MemoryStream(data))
-            {
-                return ProtoBuf.Serializer.Deserialize<T>(ms);
-            }
-        }
 
         public static void Main()
         {
@@ -64,12 +38,12 @@ namespace SamplePublisher
             Console.CancelKeyPress += (s, e) => running.Set(false);
 
             // dataHandler method is called for every new datagram received
-            void FragmentHandler(UnsafeBuffer buffer, int offset, int length, Header header)
+            void FragmentHandler(IDirectBuffer buffer, int offset, int length, Header header)
             {
                 var data = new byte[length];
                 buffer.GetBytes(offset, data);
 
-                var d = Deserialize<TestMessage>(data);
+                var d = Util.Deserialize<TestMessage>(data);
                 Console.WriteLine(
                     $"Received message ({d}) to stream {testStreamId:D} from session {header.SessionId:x} term id {header.TermId:x} term offset {header.TermOffset:D} ({length:D}@{offset:D})");
 
@@ -77,7 +51,7 @@ namespace SamplePublisher
                 //running.Set(false);
             }
 
-            var fragmentReassembler = new FragmentAssembler(FragmentHandler);
+            var fragmentReassembler = new FragmentAssembler(HandlerHelper.ToFragmentHandler(FragmentHandler));
 
             // Create a context, needed for client connection to media driver
             // A separate media driver process need to run prior to running this application
@@ -90,7 +64,7 @@ namespace SamplePublisher
             using (var aeron = Aeron.Connect(context))
             using (var subscription = aeron.AddSubscription(channel, testStreamId))
             {
-                IIdleStrategy idleStrategy = new BusySpinIdleStrategy();
+                IIdleStrategy idleStrategy = new SpinWaitIdleStrategy();
 
                 // Try to read the data from subscriber
                 while (running.Get())
@@ -98,7 +72,7 @@ namespace SamplePublisher
                     // poll delivers messages to the dataHandler as they arrive
                     // and returns number of fragments read, or 0
                     // if no data is available.
-                    var fragmentsRead = subscription.Poll(fragmentReassembler.Delegate(), fragmentLimitCount);
+                    var fragmentsRead = subscription.Poll(fragmentReassembler, fragmentLimitCount);
                     // Give the IdleStrategy a chance to spin/yield/sleep to reduce CPU
                     // use if no messages were received.
                     idleStrategy.Idle(fragmentsRead);

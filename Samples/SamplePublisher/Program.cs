@@ -4,35 +4,18 @@ using System.Linq;
 using Adaptive.Aeron;
 using Adaptive.Agrona;
 using Adaptive.Agrona.Concurrent;
-using ProtoBuf;
+using Sample.Shared;
 
-namespace SamplePublisher
+namespace Sample.Publisher
 {
     public class Program
     {
-        [ProtoContract]
-        public class TestMessage
-        {
-            [ProtoMember(1)]
-            public int EventId { get; set; }
-            [ProtoMember(2)]
-            public string Bleb { get; set; }
-        }
-
-        static byte[] Serialize<T>(T value)
-        {
-            using (var ms = new MemoryStream())
-            {
-                ProtoBuf.Serializer.Serialize(ms, value);
-                return ms.ToArray();
-            }
-        }
-
         public static void Main()
         {
             var p = new Program();
             p.Run();
         }
+
         public void Run()
         {
             const int OneKb = 1024;
@@ -44,7 +27,7 @@ namespace SamplePublisher
 
             var context = new Adaptive.Aeron.Aeron.Context();
 
-            IIdleStrategy offerIdleStrategy = new BusySpinIdleStrategy();
+            IIdleStrategy offerIdleStrategy = new SpinWaitIdleStrategy();
 
             // Connect to media driver and add publication to send messages on the configured channel and stream ID.
             // The Aeron and Publication classes implement AutoCloseable, and will automatically
@@ -56,7 +39,7 @@ namespace SamplePublisher
             {
                 do
                 {
-                    TestMessage tm = new TestMessage() { EventId = 123, Bleb = Enumerable.Repeat(Guid.NewGuid().ToString(), 100).Aggregate("", (x,y)=>x+y) };
+                    TestMessage tm = new TestMessage() { EventId = 123, Bleb = string.Join(",", Enumerable.Repeat(Guid.NewGuid().ToString(), 100)) };
                     //Console.WriteLine($"Streaming {NumberOfMessages} messages of {(RandomMessageLength ? " random" : "")} size {MessageLength} bytes to {Channel} on stream Id {StreamID}");
 
 
@@ -79,10 +62,11 @@ namespace SamplePublisher
         }
 
         private static void Publish<T>(T message,
-            Publication publication, IIdleStrategy offerIdleStrategy,
-            UnsafeBuffer buffer)
+            Publication publication, 
+            IIdleStrategy offerIdleStrategy,
+            IMutableDirectBuffer buffer)
         {
-            var serTm = Serialize(message);
+            var serTm = Util.Serialize(message);
             var length = serTm.Length;
 
             buffer.PutBytes(0, serTm);
@@ -100,9 +84,10 @@ namespace SamplePublisher
             //reporter.OnMessage(1, length);
         }
 
-        private static bool Offer(Publication publication, UnsafeBuffer buffer, int length)
+        private static bool Offer(Publication publication, IDirectBuffer buffer, int length)
         {
             var result = publication.Offer(buffer, 0, length);
+
             if (result >= 0L)
                 return true;
 
