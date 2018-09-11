@@ -25,7 +25,7 @@ namespace Sample.Publisher
             var channel = "aeron:ipc";
             var maxMsgLength = OneMb;
 
-            var context = new Adaptive.Aeron.Aeron.Context();
+            var context = new Aeron.Context();
 
             IIdleStrategy offerIdleStrategy = new SpinWaitIdleStrategy();
 
